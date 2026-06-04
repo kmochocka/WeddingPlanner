@@ -1,0 +1,129 @@
+﻿@page "/guests"
+@using WeddingPlanner.Domain.Entities
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Lista Gości</PageTitle>
+
+<div class="container mt-4">
+    <h1 class="mb-4">Lista Gości</h1>
+
+    <div class="card p-3 mb-4 shadow-sm">
+        <h5 class="mb-3">Dodaj nowego gościa</h5>
+        <EditForm Model="newGuest" OnValidSubmit="AddGuest" FormName="AddGuestForm">
+            <DataAnnotationsValidator />
+
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <InputText @bind-Value="newGuest.FirstName" class="form-control" placeholder="Imię" />
+                    <ValidationMessage For="@(() => newGuest.FirstName)" class="text-danger small" />
+                </div>
+                <div class="col-md-4">
+                    <InputText @bind-Value="newGuest.LastName" class="form-control" placeholder="Nazwisko" />
+                    <ValidationMessage For="@(() => newGuest.LastName)" class="text-danger small" />
+                </div>
+                <div class="col-md-2 d-flex align-items-center">
+                    <div class="form-check">
+                        <InputCheckbox @bind-Value="newGuest.HasPlusOne" class="form-check-input" id="plusOne" />
+                        <label class="form-check-label" for="plusOne">+ Osoba tow.</label>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">Dodaj</button>
+                </div>
+            </div>
+        </EditForm>
+    </div>
+
+    @if (guests == null)
+    {
+        <div class="spinner-border text-primary" role="status"></div>
+    }
+    else
+    {
+        <table class="table table-hover align-middle shadow-sm bg-white rounded">
+            <thead class="table-light">
+                <tr>
+                    <th>Imię i Nazwisko</th>
+                    <th class="text-center">Potwierdzony</th>
+                    <th class="text-center">Akcje</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var guest in guests)
+                {
+                    <tr>
+                        <td>
+                            @if (editingGuestId == guest.Id)
+                            {
+                                <div class="input-group input-group-sm">
+                                    <input @bind="guest.FirstName" class="form-control" />
+                                    <input @bind="guest.LastName" class="form-control" />
+                                    <button class="btn btn-success" @onclick="() => SaveGuest(guest)">Zapisz</button>
+                                </div>
+                            }
+                            else
+                            {
+                                <strong>@guest.FirstName @guest.LastName</strong>
+                                @if (guest.HasPlusOne)
+                                {
+                                    <span class="badge bg-secondary ms-2">+1</span>
+                                }
+                            }
+                        </td>
+                        <td class="text-center">
+                            <input type="checkbox" class="form-check-input" checked="@guest.IsConfirmed"
+                                   @onchange="@(e => ToggleConfirm(guest, (bool)e.Value!))" />
+                        </td>
+                        <td class="text-center">
+                            @if (editingGuestId != guest.Id)
+                            {
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => editingGuestId = guest.Id">Edytuj</button>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteGuest(guest)">Usuń</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private List<Guest>? guests;
+    private Guest newGuest = new(); 
+    private int? editingGuestId;
+
+    protected override async Task OnInitializedAsync() => await LoadGuests();
+
+    private async Task LoadGuests() => guests = (await Http.GetFromJsonAsync<Guest[]>("api/Guests"))?.ToList();
+
+   
+    private async Task AddGuest()
+    {
+        await Http.PostAsJsonAsync("api/Guests", newGuest);
+        newGuest = new(); 
+        await LoadGuests();
+    }
+
+    private async Task ToggleConfirm(Guest guest, bool val)
+    {
+        guest.IsConfirmed = val;
+        await Http.PutAsJsonAsync($"api/Guests/{guest.Id}", guest);
+    }
+
+    private async Task SaveGuest(Guest guest)
+    {
+        await Http.PutAsJsonAsync($"api/Guests/{guest.Id}", guest);
+        editingGuestId = null;
+    }
+
+    private async Task DeleteGuest(Guest guest)
+    {
+        if (await JSRuntime.InvokeAsync<bool>("confirm", "Na pewno usunąć?"))
+        {
+            await Http.DeleteAsync($"api/Guests/{guest.Id}");
+            await LoadGuests();
+        }
+    }
+}

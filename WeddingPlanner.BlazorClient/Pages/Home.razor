@@ -1,0 +1,134 @@
+﻿@page "/"
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+@using System.Timers
+@implements IDisposable
+
+<PageTitle>Wedding Planner</PageTitle>
+
+<div class="container mt-4">
+    @if (weddingDate == null)
+    {
+        <div class="text-center p-5 mb-4 rounded-3 shadow" style="background: linear-gradient(135deg, #fdf5f6 0%, #fce4ec 100%); border: 3px dashed #d81b60;">
+            <h1 class="display-6 mb-3" style="font-family: 'Playfair Display', serif; font-weight: 700; color: #4a4a4a;">Witaj w Wedding Planner 💍</h1>
+            <h4 class="mb-4 text-muted">Aby zacząć magię planowania, podaj datę swojego wesela! ✨</h4>
+            <div class="d-flex justify-content-center gap-2 mx-auto" style="max-width: 400px;">
+                <input type="date" class="form-control form-control-lg shadow-sm" @bind="inputDate" />
+                <button class="btn btn-lg px-4 shadow-sm" style="background-color: #d81b60; color: white;" @onclick="SaveWeddingDate">Zapisz 🌸</button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="text-center p-4 mb-4 rounded-3 shadow text-white"
+             style="background: linear-gradient(135deg, #d1a3a4 0%, #b39db1 100%); animation: pulseEffect 2s infinite;">
+            <h1 class="display-6 fw-bold" style="font-family: 'Playfair Display', serif;">Do Waszego Wielkiego Dnia pozostało: 💍</h1>
+
+            <div class="d-flex justify-content-center gap-3 my-3">
+                <div class="countdown-box">
+                    <span class="countdown-num">@days</span>
+                    <span class="countdown-label">Dni</span>
+                </div>
+                <div class="countdown-box">
+                    <span class="countdown-num">@hours</span>
+                    <span class="countdown-label">Godzin</span>
+                </div>
+                <div class="countdown-box">
+                    <span class="countdown-num">@minutes</span>
+                    <span class="countdown-label">Minut</span>
+                </div>
+                <div class="countdown-box">
+                    <span class="countdown-num">@seconds</span>
+                    <span class="countdown-label">Sekund</span>
+                </div>
+            </div>
+            <p class="mb-0 text-white-50 small">
+                Data ślubu: <strong>@weddingDate.Value.ToString("dd.MM.yyyy")</strong> |
+                <span style="cursor: pointer; text-decoration: underline;" @onclick="ResetDate">Zmień datę</span>
+            </p>
+        </div>
+    }
+
+    <div class="row mb-5 justify-content-center">
+        <div class="col-md-10 text-center">
+            <h4 style="color: #d81b60; font-family: 'Playfair Display', serif;">🌸 Zadanie aplikacji</h4>
+            <p class="fs-5 text-secondary">
+                Kompleksowa organizacja ślubu i wesela: od pilnowania budżetu, przez zarządzanie listą gości,
+                aż po planowanie spotkań i usadzenie wszystkich przy wspólnych stołach.
+            </p>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        @RenderTile("/guests", "01", "Lista Gości", "Dodawaj gości, zarządzaj osobami towarzyszącymi i pilnuj statusu potwierdzeń (RSVP).", "#a3b899")
+        @RenderTile("/expenses", "02", "Budżet i Wydatki", "Kontroluj finanse na bieżąco. Wykresy pokażą Ci, ile już wydałaś, a ile musisz jeszcze odłożyć.", "#d1a3a4")
+        @RenderTile("/tasks", "03", "Harmonogram", "Twoja lista zadań 'to-do'. Odliczaj zrealizowane punkty i nie daj się zaskoczyć terminom.", "#5a5a5a")
+        @RenderTile("/calendar", "04", "Spotkania i Kalendarz", "Planuj wizyty u krawcowej, degustacje tortu i spotkania z usługodawcami w jednym miejscu.", "#8fa8c1")
+        @RenderTile("/tables", "05", "Planowanie Stołów", "Zaprojektuj układ sali i rozsadź gości tak, by każdy czuł się swobodnie i dobrze bawił.", "#b39db1")
+    </div>
+</div>
+
+@code {
+    private DateTime? weddingDate;
+    private DateTime inputDate = DateTime.Now.AddMonths(6);
+    private Timer? timer;
+    private int days, hours, minutes, seconds;
+
+    // Helper do generowania kafelków, żeby kod był krótszy
+    private RenderFragment RenderTile(string url, string num, string title, string desc, string color) => builder =>
+    {
+        builder.OpenElement(0, "div"); builder.AddAttribute(1, "class", "col-md-4");
+        builder.OpenElement(2, "div"); builder.AddAttribute(3, "class", "card h-100 border-0 shadow-sm p-3 custom-card text-center");
+        builder.AddAttribute(4, "onclick", EventCallback.Factory.Create(this, () => Navigation.NavigateTo(url)));
+        builder.AddAttribute(5, "style", "cursor: pointer;");
+        builder.OpenElement(6, "div"); builder.AddAttribute(7, "class", "card-body");
+        builder.OpenElement(8, "div"); builder.AddAttribute(9, "class", "display-6 mb-2"); builder.AddAttribute(10, "style", $"color: {color}"); builder.AddContent(11, num); builder.CloseElement();
+        builder.OpenElement(12, "h5"); builder.AddAttribute(13, "class", "fw-bold"); builder.AddContent(14, title); builder.CloseElement();
+        builder.OpenElement(15, "p"); builder.AddAttribute(16, "class", "text-muted small"); builder.AddContent(17, desc); builder.CloseElement();
+        builder.CloseElement(); builder.CloseElement(); builder.CloseElement();
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var saved = await JSRuntime.InvokeAsync<string?>("localStorage.getItem", "weddingDate");
+            if (DateTime.TryParse(saved, out DateTime parsed)) { weddingDate = parsed; StartCountdown(); StateHasChanged(); }
+        }
+    }
+
+    private async Task SaveWeddingDate()
+    {
+        weddingDate = inputDate.Date;
+        await JSRuntime.InvokeVoidAsync("localStorage.setItem", "weddingDate", weddingDate.Value.ToString("yyyy-MM-dd"));
+        StartCountdown();
+    }
+
+    private async Task ResetDate()
+    {
+        timer?.Stop(); weddingDate = null;
+        await JSRuntime.InvokeVoidAsync("localStorage.removeItem", "weddingDate");
+    }
+
+    private void StartCountdown()
+    {
+        timer?.Stop(); UpdateCountdown(null, null);
+        timer = new Timer(1000); timer.Elapsed += UpdateCountdown; timer.Start();
+    }
+
+    private void UpdateCountdown(object? s, ElapsedEventArgs? e)
+    {
+        if (weddingDate.HasValue)
+        {
+            var diff = weddingDate.Value - DateTime.Now;
+            if (diff.TotalSeconds > 0)
+            {
+                days = diff.Days; hours = diff.Hours; minutes = diff.Minutes; seconds = diff.Seconds;
+            }
+            else { days = hours = minutes = seconds = 0; timer?.Stop(); }
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    public void Dispose() => timer?.Dispose();
+}

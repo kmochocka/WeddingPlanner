@@ -1,0 +1,225 @@
+﻿@page "/calendar"
+@using System.Net.Http.Json
+@using WeddingPlanner.Domain.Entities
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Kalendarz</PageTitle>
+
+<h1>Mój Kalendarz</h1>
+
+<div class="mb-4 p-3 border rounded shadow-sm bg-white">
+    <h3 class="mb-2" style="font-size: 1.25rem;">Zaplanuj nowe spotkanie</h3>
+
+    <EditForm Model="newAppointment" OnValidSubmit="AddAppointment">
+        <DataAnnotationsValidator />
+
+        <div class="row g-2 align-items-start">
+            <div class="col-md-4">
+                <label class="text-muted small">Co?</label>
+                <InputText @bind-Value="newAppointment.Title" class="form-control" placeholder="Nazwa spotkania" />
+                <ValidationMessage For="@(() => newAppointment.Title)" />
+            </div>
+            <div class="col-md-4">
+                <label class="text-muted small">Opis</label>
+                <InputText @bind-Value="newAppointment.Description" class="form-control" placeholder="Szczegóły" />
+            </div>
+            <div class="col-md-2">
+                <label class="text-muted small">Termin</label>
+                
+                <InputDate @bind-Value="newAppointment.StartTime" ParsingErrorMessage="Niepoprawny format daty" class="form-control" />
+                <ValidationMessage For="@(() => newAppointment.StartTime)" />
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn w-100" style="background-color: #5a5a5a; color: white;">Dodaj 📅</button>
+            </div>
+        </div>
+        <ValidationSummary />
+    </EditForm>
+</div>
+
+@if (agenda is null)
+{
+    <p><em>Ładowanie...</em></p>
+}
+else
+{
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <button class="btn btn-outline-secondary" @onclick="PreviousMonth">◀ Poprzedni</button>
+        <h3 class="mb-0">@currentMonth.ToString("MMMM yyyy")</h3>
+        <button class="btn btn-outline-secondary" @onclick="NextMonth">Następny ▶</button>
+    </div>
+    <div class="calendar-grid shadow-sm bg-white rounded p-2">
+        @foreach (var name in new[] { "Pon", "Wt", "Śro", "Czw", "Pią", "Sob", "Nie" })
+        {
+            <div class="day-header">@name</div>
+        }
+        @for (var i = 0; i < EmptyDaysBefore; i++)
+        {
+            <div class="calendar-cell empty"></div>
+        }
+        @for (var day = 1; day <= DaysInMonth; day++)
+        {
+            var date = new DateTime(currentMonth.Year, currentMonth.Month, day);
+            var items = agenda.Where(a => a.Date.Date == date.Date).ToList();
+            var isWeddingDay = weddingDate?.Date == date.Date;
+            var isSelected = selectedDate?.Date == date.Date;
+
+            <div class="calendar-cell @(isSelected ? "selected-day" : "") @(isWeddingDay ? "wedding-day-cell" : "")"
+                 @onclick="() => selectedDate = date">
+                <span class="day-number">@(isWeddingDay ? "👑 " : "")@day</span>
+
+                <div class="badge-container">
+                    @if (isWeddingDay)
+                    {
+                        <span class="badge w-100 text-dark pulse-animation" style="background-color: #ffd700;">💍 ŚLUB!</span>
+                    }
+                    else if (items.Any())
+                    {
+                        <span class="badge w-100" style="background-color: #d1a3a4; font-size: 0.7rem;">@items.Count wyd.</span>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (selectedDate is not null)
+    {
+        var isSelectedWedding = weddingDate.HasValue && selectedDate.Value.Date == weddingDate.Value.Date;
+        <div class="mt-4 p-3 border rounded shadow-sm" style="background-color: @(isSelectedWedding ? "#fffbeb" : "#fdf5f6");">
+            <h4>Plan na: <strong>@selectedDate.Value.ToString("dd.MM.yyyy")</strong></h4>
+
+            @if (isSelectedWedding)
+            {
+                <div class="alert alert-warning text-center fw-bold">✨ TO JEST TEN DZIEŃ! 🥂</div>
+            }
+
+            <ul class="list-group mt-3">
+                @foreach (var item in agenda.Where(a => a.Date.Date == selectedDate.Value.Date))
+                {
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        @if (editingAppointmentId == item.Id)
+                        {
+                            <div class="flex-grow-1 me-3">
+                                <input @bind="editTitle" class="form-control form-control-sm mb-1" />
+                                <input @bind="editDate" type="datetime-local" class="form-control form-control-sm" />
+                            </div>
+                            <button class="btn btn-sm btn-success" @onclick="() => SaveAppointment(item.Id)">💾</button>
+                        }
+                        else
+                        {
+                            <div>
+                                <span class="fs-5 me-2">@(item.Type == "Spotkanie" ? "📅" : "📋")</span>
+                                <strong>@item.Title</strong><br />
+                                <small class="text-muted">@item.Subtext</small>
+                            </div>
+                            <div class="text-end">
+                                <span class="badge mb-2" style="background-color: #5a5a5a;">@item.Date.ToString("HH:mm")</span>
+                                @if (item.Type == "Spotkanie")
+                                {
+                                    <br />
+                                    <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => StartEdit(item)">✏️</button>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteAppointment(item)">🗑️</button>
+                                }
+                            </div>
+                        }
+                    </li>
+                }
+            </ul>
+        </div>
+    }
+}
+
+
+@code {
+    private List<AgendaItem>? agenda;
+    private DateTime? weddingDate;
+    private DateTime currentMonth = new(DateTime.Now.Year, DateTime.Now.Month, 1);
+    private DateTime? selectedDate = DateTime.Now.Date;
+    private int? editingAppointmentId;
+    private string editTitle = "";
+    private DateTime editDate;
+
+    private Appointment newAppointment = new()
+    {
+        StartTime = DateTime.Now,
+        EndTime = DateTime.Now
+    };
+
+    private int DaysInMonth => DateTime.DaysInMonth(currentMonth.Year, currentMonth.Month);
+    private int EmptyDaysBefore => ((int)currentMonth.DayOfWeek + 6) % 7;
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        var saved = await JSRuntime.InvokeAsync<string?>("localStorage.getItem", "weddingDate");
+        if (DateTime.TryParse(saved, out var parsed)) { weddingDate = parsed; StateHasChanged(); }
+    }
+
+    private async Task LoadData()
+    {
+        var appointments = await Http.GetFromJsonAsync<List<Appointment>>("api/Appointments") ?? [];
+        var tasks = await Http.GetFromJsonAsync<List<TaskItem>>("api/Tasks") ?? [];
+        agenda = appointments.Select(a => new AgendaItem(a.Id, a.StartTime, a.Title, a.Description, "Spotkanie"))
+            .Concat(tasks.Where(t => t.DueDate.HasValue).Select(t => new AgendaItem(t.Id, t.DueDate!.Value, t.Title, $"Zadanie dla: {t.AssignedPerson ?? "wszyscy"}", "Zadanie")))
+            .OrderBy(a => a.Date)
+            .ToList();
+    }
+
+    private async Task AddAppointment()
+    {
+        newAppointment.EndTime = newAppointment.StartTime;
+        await Http.PostAsJsonAsync("api/Appointments", newAppointment);
+
+        newAppointment = new() { StartTime = DateTime.Now, EndTime = DateTime.Now };
+        await LoadData();
+    }
+
+    private async Task DeleteAppointment(int id)
+    {
+        await Http.DeleteAsync($"api/Appointments/{id}");
+        await LoadData();
+    }
+
+    private void StartEdit(AgendaItem item)
+    {
+        editingAppointmentId = item.Id;
+        editTitle = item.Title;
+        editDate = item.Date;
+    }
+
+    private async Task SaveAppointment(int id)
+    {
+        var updated = new Appointment { Id = id, Title = editTitle, StartTime = editDate, EndTime = editDate };
+        await Http.PutAsJsonAsync($"api/Appointments/{id}", updated);
+
+        editingAppointmentId = null;
+        await LoadData();
+    }
+
+    private async Task DeleteAppointment(AgendaItem item)
+    {
+        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Czy na pewno usunąć spotkanie: '{item.Title}'?");
+        if (confirmed)
+        {
+            await Http.DeleteAsync($"api/Appointments/{item.Id}");
+            await LoadData();
+        }
+    }
+
+    private void PreviousMonth()
+    {
+        currentMonth = currentMonth.AddMonths(-1);
+        selectedDate = null;
+    }
+
+    private void NextMonth()
+    {
+        currentMonth = currentMonth.AddMonths(1);
+        selectedDate = null;
+    }
+
+    private record AgendaItem(int Id, DateTime Date, string Title, string Subtext, string Type);
+}

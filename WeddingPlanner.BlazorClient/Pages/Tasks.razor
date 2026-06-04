@@ -1,0 +1,176 @@
+﻿@page "/tasks"
+@using System.Net.Http.Json
+@using WeddingPlanner.Domain.Entities
+@inject IJSRuntime JS
+@inject HttpClient Http
+
+<PageTitle>Harmonogram Prac</PageTitle>
+
+<h1>Lista zadań do wykonania</h1>
+
+<div class="mb-4 p-3 border rounded shadow-sm bg-white">
+    <h3>Dodaj nowe zadanie</h3>
+
+    <EditForm Model="newTask" OnValidSubmit="AddTask">
+        <DataAnnotationsValidator />
+
+        <div class="d-flex gap-2 align-items-start flex-wrap">
+            <div class="flex-grow-1">
+                <InputText @bind-Value="newTask.Title" class="form-control" placeholder="Co jest do zrobienia?" />
+                <ValidationMessage For="@(() => newTask.Title)" />
+            </div>
+
+            <div style="width: 200px;">
+                <InputSelect @bind-Value="newTask.AssignedPerson" class="form-select">
+                    <option value="">Kto wykonuje?</option>
+                    <option value="Panna Młoda">Panna Młoda</option>
+                    <option value="Pan Młody">Pan Młody</option>
+                    <option value="Wspólnie">Wspólnie</option>
+                    <option value="Świadek/Świadkowa">Świadek/Świadkowa</option>
+                </InputSelect>
+            </div>
+
+            <div style="width: 170px;">
+                <InputDate @bind-Value="newTask.DueDate" class="form-control" />
+            </div>
+
+            <button type="submit" class="btn" style="background-color: #5a5a5a; color: white;">Dodaj</button>
+        </div>
+        <ValidationSummary class="text-danger mt-2" />
+    </EditForm>
+</div>
+
+@if (tasks == null)
+{
+    <p><em>Ładowanie zadań...</em></p>
+}
+else
+{
+    <table class="table align-middle table-hover">
+        <thead>
+            <tr>
+                <th>Status</th>
+                <th>Zadanie</th>
+                <th>Odpowiedzialny</th>
+                <th>Termin</th>
+                <th>Akcje</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var task in FilteredTasks)
+            {
+                <tr style="@(task.IsCompleted ? "opacity: 0.6;" : "")">
+                    <td>
+                        <span style="cursor: pointer;" @onclick="() => ToggleComplete(task)">
+                            @(task.IsCompleted ? "✅" : "🔲")
+                        </span>
+                    </td>
+                    <td>
+                        @if (editingTaskId == task.Id)
+                        {
+                            <InputText @bind-Value="task.Title" class="form-control form-control-sm" />
+                        }
+                        else
+                        {
+                            <span style="@(task.IsCompleted ? "text-decoration: line-through;" : "")">@task.Title</span>
+                        }
+                    </td>
+                    <td>
+                        @if (editingTaskId == task.Id)
+                        {
+                            <InputSelect @bind-Value="task.AssignedPerson" class="form-select form-select-sm">
+                                <option value="Panna Młoda">Panna Młoda</option>
+                                <option value="Pan Młody">Pan Młody</option>
+                                <option value="Wspólnie">Wspólnie</option>
+                                <option value="Świadek/Świadkowa">Świadek/Świadkowa</option>
+                            </InputSelect>
+                        }
+                        else
+                        {
+                            @task.AssignedPerson
+                        }
+                    </td>
+                    <td>
+                        @if (editingTaskId == task.Id)
+                        {
+                            <InputDate @bind-Value="task.DueDate" class="form-control form-control-sm" />
+                        }
+                        else
+                        {
+                            @(task.DueDate?.ToString("dd.MM.yyyy"))
+                        }
+                    </td>
+                    <td>
+                        @if (editingTaskId == task.Id)
+                        {
+                            <button class="btn btn-sm btn-success" @onclick="() => SaveTask(task)">💾</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm btn-outline-primary" @onclick="() => EditTask(task.Id)">✏️</button>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteTask(task)">🗑️</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<TaskItem>? tasks;
+    private TaskItem newTask = new();
+    private string filterPerson = "";
+    private bool sortByDate = true;
+    private int? editingTaskId;
+
+    private IEnumerable<TaskItem> FilteredTasks
+    {
+        get
+        {
+            if (tasks == null) return Enumerable.Empty<TaskItem>();
+            var query = tasks.Where(t => string.IsNullOrEmpty(filterPerson) || t.AssignedPerson == filterPerson);
+            return sortByDate
+                ? query.OrderBy(t => t.IsCompleted).ThenBy(t => t.DueDate ?? DateTime.MaxValue)
+                : query.OrderBy(t => t.IsCompleted).ThenByDescending(t => t.DueDate ?? DateTime.MinValue);
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadTasks();
+
+    private async Task LoadTasks() => tasks = await Http.GetFromJsonAsync<List<TaskItem>>("api/Tasks") ?? new();
+
+    private async Task AddTask()
+    {
+        await Http.PostAsJsonAsync("api/Tasks", newTask);
+        newTask = new(); 
+        await LoadTasks();
+    }
+
+    private async Task ToggleComplete(TaskItem task)
+    {
+        task.IsCompleted = !task.IsCompleted;
+        await Http.PutAsJsonAsync($"api/Tasks/{task.Id}", task);
+    }
+
+    private async Task DeleteTask(TaskItem task)
+    {
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", $"Czy na pewno chcesz usunąć zadanie: '{task.Title}'?");
+
+        if (confirmed)
+        {
+            await Http.DeleteAsync($"api/Tasks/{task.Id}");
+            await LoadTasks(); 
+        }
+    }
+
+    private void EditTask(int id) => editingTaskId = id;
+
+    private async Task SaveTask(TaskItem task)
+    {
+        await Http.PutAsJsonAsync($"api/Tasks/{task.Id}", task);
+        editingTaskId = null; 
+        await LoadTasks();
+    }
+    private void ToggleSort() => sortByDate = !sortByDate;
+}

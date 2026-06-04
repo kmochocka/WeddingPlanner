@@ -1,0 +1,83 @@
+﻿@page "/budget"
+@using WeddingPlanner.SharedKernel.DTOs
+@inject HttpClient Http
+@inject ILogger<BudgetView> Logger
+
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-6 offset-md-3">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h3 class="mb-0">Budżet Ślubny</h3>
+                </div>
+                <div class="card-body">
+                    @if (isLoading)
+                    {
+                        <div class="text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Ładowanie...</span>
+                            </div>
+                            <p class="mt-2">Pobieranie danych z serwera...</p>
+                        </div>
+                    }
+                    else if (errorMessage != null)
+                    {
+                        <div class="alert alert-danger">
+                            <strong>Błąd:</strong> @errorMessage
+                        </div>
+                    }
+                    else if (budget != null)
+                    {
+                        <div class="text-center">
+                            <p class="text-muted">Całkowita kwota budżetu:</p>
+                            <h1 class="display-4">@budget.TotalAmount.ToString("C2")</h1>
+                        </div>
+                    }
+                </div>
+                <div class="card-footer text-end">
+                    <button class="btn btn-outline-secondary" @onclick="RefreshData">
+                        Odśwież
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private BudgetDto? budget;
+    private bool isLoading = true;
+    private string? errorMessage;
+
+    // Metoda wywoływana automatycznie przy załadowaniu strony
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBudget();
+    }
+
+    private async Task LoadBudget()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            // Zakładamy, że Twój kontroler w WebAPI wystawia endpoint "api/budget"
+            budget = await Http.GetFromJsonAsync<BudgetDto>("api/budget");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Wystąpił problem podczas pobierania budżetu.");
+            errorMessage = "Nie udało się pobrać danych. Sprawdź, czy serwer API działa.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task RefreshData()
+    {
+        await LoadBudget();
+    }
+}

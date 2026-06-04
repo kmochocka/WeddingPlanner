@@ -1,0 +1,50 @@
+﻿@page "/guests"
+@using WeddingPlanner.SharedKernel.DTOs
+@using WeddingPlanner.Domain.Entities
+@inject HttpClient Http
+@inject ILogger<GuestList> Logger
+
+<h3>Lista gości</h3>
+
+@if (guests == null)
+{
+    <p><em>Ładowanie gości...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Imię i Nazwisko</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var guest in guests)
+            {
+                <tr>
+                    <td>@guest.FirstName</td>
+                    <td>@guest.LastName</td>
+                    <td>@(guest.IsConfirmed ? "Potwierdzony" : "Oczekujący")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<GuestDto>? guests;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Odpytuje WebAPI o listę gości
+            guests = await Http.GetFromJsonAsync<List<GuestDto>>("api/guests");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Błąd podczas pobierania listy gości z API.");
+        }
+    }
+}

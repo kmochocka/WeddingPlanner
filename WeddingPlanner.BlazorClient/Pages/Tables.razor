@@ -1,0 +1,399 @@
+@page "/tables"
+@using System.Net.Http.Json
+@using WeddingPlanner.Domain.Entities
+@inject HttpClient Http
+
+<PageTitle>Plan Sali i Stołów</PageTitle>
+
+<div class="wedding-header mb-4">
+    <h1>Interaktywny Plan Sali</h1>
+</div>
+
+<div class="row" @onmousemove="OnCanvasMouseMove" @onmouseup="OnCanvasMouseUp" @onmouseleave="OnCanvasMouseUp">
+    <div class="col-md-9">
+
+        <div class="mb-3 p-3 bg-white rounded border shadow-sm">
+            <EditForm Model="newTable" OnValidSubmit="CreateTable">
+                <DataAnnotationsValidator />
+                <div class="d-flex gap-3 align-items-start flex-wrap">
+                    <div>
+                        <label>Nazwa</label>
+                        <InputText @bind-Value="newTable.Name" class="form-control" />
+                        <ValidationMessage For="@(() => newTable.Name)" />
+                    </div>
+                    <div>
+                        <label>Kształt</label>
+                        <InputSelect @bind-Value="newTable.Shape" class="form-select">
+                            <option value="Round">Okrągły</option>
+                            <option value="Square">Kwadratowy</option>
+                            <option value="Main">Podłużny</option>
+                        </InputSelect>
+                    </div>
+                    <div>
+                        <label>Miejsca</label>
+                        <InputNumber @bind-Value="newTable.Capacity" class="form-control" style="width: 80px;" />
+                        <ValidationMessage For="@(() => newTable.Capacity)" />
+                    </div>
+                    <div class="align-self-end">
+                        <button type="submit" class="btn btn-primary">＋ Dodaj Stół</button>
+                    </div>
+                </div>
+                <ValidationSummary class="text-danger mt-2" />
+            </EditForm>
+        </div>
+
+        <div class="sala-canvas shadow-sm rounded position-relative">
+            @if (tables != null)
+            {
+                @foreach (var table in tables)
+                {
+                    <div class="table-wrapper @(selectedTable?.Id == table.Id ? "selected-wrapper" : "")"
+                         style="left: @((int)table.PositionX)px; top: @((int)table.PositionY)px;"
+                         @onmousedown="(e) => OnTableMouseDown(e, table)"
+                         @onclick="() => SelectTable(table)"
+                         @onclick:stopPropagation>
+
+                        <div class="chairs-container @table.Shape.ToLower()">
+                            @for (int i = 1; i <= table.Capacity; i++)
+                            {
+                                int seatNum = i;
+                                var seatInfo = GetGuestAtSeat(table.Id, seatNum);
+                                <div class="chair @(seatInfo.IsOccupied ? "occupied" : "empty")"
+                                     style="--total-chairs: @table.Capacity; --chair-index: @seatNum;"
+                                     ondragover="event.preventDefault();"
+                                     @ondrop="() => HandleGuestDropOnSeat(table, seatNum)">
+
+                                    @if (seatInfo.IsOccupied)
+                                    {
+                                        <span class="initials">@seatInfo.Initials</span>
+                                        <button class="btn-remove-chair" @onclick="() => RemoveSeatAssignment(seatInfo)" @onclick:stopPropagation>×</button>
+                                    }
+                                    else
+                                    {
+                                        <span class="seat-num">@seatNum</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+
+                        <div class="table-container-inside @table.Shape.ToLower()">
+                            <div class="table-name">@table.Name</div>
+                            <div class="table-info">👥 @GetGuestCount(table.Id)/@table.Capacity</div>
+                            <button class="btn-delete-table" @onclick="() => DeleteTable(table.Id)" @onclick:stopPropagation>×</button>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card shadow-sm border-0 side-panel-card p-3">
+            @if (selectedTable != null)
+            {
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h5 class="m-0 wedding-title">📌 @selectedTable.Name</h5>
+                </div>
+                <p class="text-muted small">Miejsca: <strong>@GetGuestCount(selectedTable.Id) / @selectedTable.Capacity</strong></p>
+                <hr />
+
+                <h6 class="small fw-bold text-uppercase text-secondary mb-2">Kto siedzi przy stole:</h6>
+                <div class="guest-list-panel mb-4">
+                    @for (int i = 1; i <= selectedTable.Capacity; i++)
+                    {
+                        int seatNum = i;
+                        var seatInfo = GetGuestAtSeat(selectedTable.Id, seatNum);
+
+                        <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                            <span class="badge bg-light text-dark border">@seatNum</span>
+                            <div class="flex-grow-1 mx-2 text-truncate">
+                                @if (seatInfo.IsOccupied)
+                                {
+                                    <span class="small fw-bold text-dark">@seatInfo.DisplayName</span>
+                                }
+                                else
+                                {
+                                    <span class="small text-muted font-italic">Wolne miejsce</span>
+                                }
+                            </div>
+                            @if (seatInfo.IsOccupied)
+                            {
+                                <button class="btn btn-sm btn-outline-danger p-0 px-2"
+                                        @onclick="() => RemoveSeatAssignment(seatInfo)"
+                                        @onclick:stopPropagation title="Usuń gościa">
+                                    ×
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <h6 class="small fw-bold text-uppercase text-secondary mb-2">Nieusadzeni:</h6>
+                <div class="guest-drag-list">
+                    @foreach (var draggableItem in FilteredDraggableGuests)
+                    {
+                        <div class="guest-drag-item p-2 mb-1"
+                             draggable="true"
+                             @ondragstart="() => HandleGuestDragStart(draggableItem)">
+                            <span class="small">@draggableItem.Label</span>
+                        </div>
+                    }
+                    @if (!FilteredDraggableGuests.Any())
+                    {
+                        <p class="text-muted small text-center py-2">Wszyscy usadzeni! 🎉</p>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="text-center my-auto p-4 text-muted">
+                    <h6>Kliknij stół na planszy, aby zobaczyć szczegóły miejsc.</h6>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<Table>? tables;
+    private List<Guest>? guests;
+    private Table newTable = new Table { Capacity = 8, Shape = "Round" };
+    private Table? selectedTable;
+    private string searchQuery = string.Empty;
+
+    private Table? draggingTable;
+    private double lastMouseX;
+    private double lastMouseY;
+    private DraggedItemInfo? draggedItem;
+
+    public class DraggedItemInfo
+    {
+        public Guest GuestObject { get; set; } = new();
+        public bool IsPlusOneInstance { get; set; }
+        public string Label { get; set; } = string.Empty;
+    }
+
+    public class SeatStatus
+    {
+        public bool IsOccupied { get; set; }
+        public string DisplayName { get; set; } = string.Empty;
+        public string Initials { get; set; } = string.Empty;
+        public Guest? AssociatedGuest { get; set; }
+        public bool IsPlusOneSeat { get; set; }
+    }
+
+    // TUTAJ ZMIENILIŚMY LOGIKĘ FILTROWANIA:
+    private IEnumerable<DraggedItemInfo> FilteredDraggableGuests
+    {
+        get
+        {
+            var list = new List<DraggedItemInfo>();
+            if (guests == null) return list;
+
+            // Filtrujemy bazową listę gości, biorąc tylko tych z potwierdzoną obecnością (IsConfirmed == true)
+            // UWAGA: Jeśli Twoja właściwość w bazie nazywa się inaczej niż IsConfirmed (np. Confirmed), zmień to poniżej:
+            var confirmedGuests = guests.Where(g => g.IsConfirmed == true);
+
+            foreach (var g in confirmedGuests)
+            {
+                if (g.TableId == null || g.SeatNumber == null)
+                {
+                    list.Add(new DraggedItemInfo { GuestObject = g, IsPlusOneInstance = false, Label = $"👤 {g.FirstName} {g.LastName}" });
+                }
+                if (g.HasPlusOne && (g.TableId == null || g.SeatNumberPlusOne == null))
+                {
+                    list.Add(new DraggedItemInfo { GuestObject = g, IsPlusOneInstance = true, Label = $"💕 Tow. {g.FirstName} {g.LastName}" });
+                }
+            }
+
+            return list.Where(x => string.IsNullOrWhiteSpace(searchQuery) || x.Label.Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    private async Task LoadData()
+    {
+        tables = await Http.GetFromJsonAsync<List<Table>>("api/Tables");
+        guests = await Http.GetFromJsonAsync<List<Guest>>("api/Guests");
+
+        if (selectedTable != null && tables != null)
+        {
+            selectedTable = tables.FirstOrDefault(t => t.Id == selectedTable.Id);
+        }
+    }
+
+    private async Task CreateTable()
+    {
+        if (!string.IsNullOrWhiteSpace(newTable.Name))
+        {
+            if (newTable.Capacity < 2) newTable.Capacity = 2;
+            if (newTable.Capacity > 16) newTable.Capacity = 16;
+
+            int offset = (tables?.Count ?? 0) * 25;
+            newTable.PositionX = 40 + offset;
+            newTable.PositionY = 40 + offset;
+
+            await Http.PostAsJsonAsync("api/Tables", newTable);
+            newTable = new Table { Capacity = 8, Shape = "Round" };
+            await LoadData();
+        }
+    }
+
+    private void OnTableMouseDown(MouseEventArgs e, Table table)
+    {
+        draggingTable = table;
+        selectedTable = table;
+        lastMouseX = e.ClientX;
+        lastMouseY = e.ClientY;
+    }
+
+    private void OnCanvasMouseMove(MouseEventArgs e)
+    {
+        if (draggingTable != null)
+        {
+            double deltaX = e.ClientX - lastMouseX;
+            double deltaY = e.ClientY - lastMouseY;
+
+            draggingTable.PositionX += deltaX;
+            draggingTable.PositionY += deltaY;
+
+            lastMouseX = e.ClientX;
+            lastMouseY = e.ClientY;
+        }
+    }
+
+    private async Task OnCanvasMouseUp(MouseEventArgs e)
+    {
+        if (draggingTable != null)
+        {
+            await Http.PutAsJsonAsync($"api/Tables/{draggingTable.Id}", draggingTable);
+            draggingTable = null;
+            await LoadData();
+        }
+    }
+
+    private void SelectTable(Table table) => selectedTable = table;
+
+    private SeatStatus GetGuestAtSeat(int tableId, int seatNumber)
+    {
+        var status = new SeatStatus { IsOccupied = false };
+        if (guests == null) return status;
+
+        var mainGuest = guests.FirstOrDefault(g => g.TableId == tableId && g.SeatNumber == seatNumber);
+        if (mainGuest != null)
+        {
+            status.IsOccupied = true;
+            status.DisplayName = $"{mainGuest.FirstName} {mainGuest.LastName}";
+            status.Initials = GetInitials(mainGuest.FirstName, mainGuest.LastName);
+            status.AssociatedGuest = mainGuest;
+            status.IsPlusOneSeat = false;
+            return status;
+        }
+
+        var plusOneGuest = guests.FirstOrDefault(g => g.TableId == tableId && g.SeatNumberPlusOne == seatNumber);
+        if (plusOneGuest != null)
+        {
+            status.IsOccupied = true;
+            status.DisplayName = $"Osoba tow. ({plusOneGuest.FirstName} {plusOneGuest.LastName})";
+            status.Initials = "✦" + GetInitials(plusOneGuest.FirstName, "");
+            status.AssociatedGuest = plusOneGuest;
+            status.IsPlusOneSeat = true;
+            return status;
+        }
+
+        return status;
+    }
+
+    private int GetGuestCount(int tableId)
+    {
+        if (guests == null) return 0;
+        int count = 0;
+        foreach (var g in guests)
+        {
+            if (g.TableId == tableId && g.SeatNumber != null) count++;
+            if (g.TableId == tableId && g.HasPlusOne && g.SeatNumberPlusOne != null) count++;
+        }
+        return count;
+    }
+
+    private string GetInitials(string fName, string lName)
+    {
+        string f = string.IsNullOrEmpty(fName) ? "" : fName.Substring(0, 1);
+        string l = string.IsNullOrEmpty(lName) ? "" : lName.Substring(0, 1);
+        return (f + l).ToUpper();
+    }
+
+    private void HandleGuestDragStart(DraggedItemInfo item)
+    {
+        draggedItem = item;
+    }
+
+    private async Task HandleGuestDropOnSeat(Table table, int seatNumber)
+    {
+        if (draggedItem == null) return;
+
+        var currentStatus = GetGuestAtSeat(table.Id, seatNumber);
+        if (currentStatus.IsOccupied) return;
+
+        var guest = draggedItem.GuestObject;
+
+        if (draggedItem.IsPlusOneInstance)
+        {
+            guest.TableId = table.Id;
+            guest.SeatNumberPlusOne = seatNumber;
+        }
+        else
+        {
+            guest.TableId = table.Id;
+            guest.SeatNumber = seatNumber;
+        }
+
+        await Http.PutAsJsonAsync($"api/Guests/{guest.Id}", guest);
+        draggedItem = null;
+        await LoadData();
+    }
+
+    private async Task RemoveSeatAssignment(SeatStatus status)
+    {
+        if (status.AssociatedGuest == null) return;
+        var guest = status.AssociatedGuest;
+
+        if (status.IsPlusOneSeat)
+        {
+            guest.SeatNumberPlusOne = null;
+        }
+        else
+        {
+            guest.SeatNumber = null;
+        }
+
+        if (guest.SeatNumber == null && guest.SeatNumberPlusOne == null)
+        {
+            guest.TableId = null;
+        }
+
+        await Http.PutAsJsonAsync($"api/Guests/{guest.Id}", guest);
+        await LoadData();
+    }
+
+    private async Task DeleteTable(int id)
+    {
+        if (selectedTable?.Id == id) selectedTable = null;
+
+        var guestsToFree = guests?.Where(g => g.TableId == id).ToList();
+        if (guestsToFree != null)
+        {
+            foreach (var g in guestsToFree)
+            {
+                g.TableId = null;
+                g.SeatNumber = null;
+                g.SeatNumberPlusOne = null;
+                await Http.PutAsJsonAsync($"api/Guests/{g.Id}", g);
+            }
+        }
+
+        await Http.DeleteAsync($"api/Tables/{id}");
+        await LoadData();
+    }
+}
