@@ -74,7 +74,7 @@
     private Timer? timer;
     private int days, hours, minutes, seconds;
 
-    // Helper do generowania kafelków, żeby kod był krótszy
+
     private RenderFragment RenderTile(string url, string num, string title, string desc, string color) => builder =>
     {
         builder.OpenElement(0, "div"); builder.AddAttribute(1, "class", "col-md-4");

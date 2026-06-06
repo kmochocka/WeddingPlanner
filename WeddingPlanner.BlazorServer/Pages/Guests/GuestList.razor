@@ -39,7 +39,6 @@ else
     {
         try
         {
-            // Odpytuje WebAPI o listę gości
             guests = await Http.GetFromJsonAsync<List<GuestDto>>("api/guests");
         }
         catch (Exception ex)

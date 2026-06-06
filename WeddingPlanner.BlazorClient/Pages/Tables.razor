@@ -182,7 +182,7 @@
         public bool IsPlusOneSeat { get; set; }
     }
 
-    // TUTAJ ZMIENILIŚMY LOGIKĘ FILTROWANIA:
+
     private IEnumerable<DraggedItemInfo> FilteredDraggableGuests
     {
         get
@@ -190,8 +190,7 @@
             var list = new List<DraggedItemInfo>();
             if (guests == null) return list;
 
-            // Filtrujemy bazową listę gości, biorąc tylko tych z potwierdzoną obecnością (IsConfirmed == true)
-            // UWAGA: Jeśli Twoja właściwość w bazie nazywa się inaczej niż IsConfirmed (np. Confirmed), zmień to poniżej:
+
             var confirmedGuests = guests.Where(g => g.IsConfirmed == true);
 
             foreach (var g in confirmedGuests)

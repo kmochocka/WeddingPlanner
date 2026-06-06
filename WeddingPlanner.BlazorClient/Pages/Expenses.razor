@@ -188,9 +188,9 @@
 
     private async Task AddExpense()
     {
-        // Walidacja przeszła dzięki EditForm, więc możemy bezpiecznie wysyłać
+
         await Http.PostAsJsonAsync("api/Expenses", newExpense);
-        newExpense = new() { Category = "Inne" }; // Reset
+        newExpense = new() { Category = "Inne" }; 
         await LoadData();
     }
 

@@ -49,7 +49,7 @@
     private bool isLoading = true;
     private string? errorMessage;
 
-    // Metoda wywoływana automatycznie przy załadowaniu strony
+
     protected override async Task OnInitializedAsync()
     {
         await LoadBudget();
@@ -62,7 +62,7 @@
 
         try
         {
-            // Zakładamy, że Twój kontroler w WebAPI wystawia endpoint "api/budget"
+
             budget = await Http.GetFromJsonAsync<BudgetDto>("api/budget");
         }
         catch (Exception ex)
